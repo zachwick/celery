@@ -1,0 +1,61 @@
+# Documentation can be found at https://render.com/docs/deploy-celery
+
+services:
+  # A private Redis instance for brokering Celery tasks
+  - type: pserv
+    name: redis
+    env: docker
+    repo: https://github.com/zachwick/redis_render.git # (STEP 4) REPLACE with your repo made from this template
+    branch: master
+    envVars:
+      - key: GENERATED_SECRET
+        generateValue: true
+      - key: DASHBOARD_SECRET
+        sync: false
+    disk:
+      name: redis-data
+      mountPath: /var/lib/redis
+      sizeGB: 10
+
+  # A background worker that consumes a queue via Celery
+  - type: worker
+    name: worker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A tasks worker -l info
+    envVars:
+      - fromGroup: flask_and_celery
+
+  # A Flower instance for monitoring the Celery instance
+  - type: web
+    name: flower
+    env: python
+    repo: https://github.com/zachwick/flask_celery_render # (STEP 2) REPLACE with your repo made from this template
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A tasks flower --basic_auth=for:bar -l info # (STEP 5) REPLACE this username and password with something less guessable
+    envVars:
+      - fromGroup: flask_and_celery
+
+  # The Flask application
+  - type: web
+    name: flask
+    env: python
+    repo: https://github.com/zachwick/flask_celery_render # (STEP 2) REPLACE with your repo made from this template
+    branch: master
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetMemoryPercent: 60
+      targetCPUPercent: 60
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - fromGroup: flask_and_celery
+    autoDeploy: true
+
+envVarGroups:
+  - name: flask_and_celery
+    envVars:
+      - key: CELERY_BROKER_URL
+        value: redis://redis-foo1:10000 # (STEP 11) REPLACE with the service address of your redis instance on Render
